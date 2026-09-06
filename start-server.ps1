@@ -62,12 +62,14 @@ $gw = Start-Process -FilePath "node" -ArgumentList "`"$AppDir\server\gateway.js`
       -RedirectStandardOutput $gwLog -RedirectStandardError $gwErr -PassThru
 Write-Host "Gateway PID $($gw.Id) -> http://127.0.0.1:$WebPort"
 
+$webAuthHead = @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("opencode:$webPass")) }
+
 # Esperar a que el gateway responda
 $gwReady = $false
 for ($i = 0; $i -lt 20; $i++) {
   Start-Sleep -Milliseconds 500
   try {
-    $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$WebPort/global/health" -Headers $authHead -TimeoutSec 3
+    $r = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$WebPort/global/health" -Headers $webAuthHead -TimeoutSec 3
     if ($r.StatusCode -eq 200) { $gwReady = $true; break }
   } catch {}
 }
@@ -92,13 +94,11 @@ if (Test-Path $cf) {
     Start-Sleep -Milliseconds 750
     if (Test-Path $cfOut) {
       $content = Get-Content $cfOut -Raw -ErrorAction SilentlyContinue
-      $m = [regex]::Match($content, "https://[a-zA-Z0-9-]+\.trycloudflare\.com")
-      if ($m.Success) { $tunnelUrl = $m.Value }
+      if ($content) { $m = [regex]::Match($content, "https://[a-zA-Z0-9-]+\.trycloudflare\.com"); if ($m.Success) { $tunnelUrl = $m.Value } }
     }
     if (Test-Path $cfErr) {
       $contentE = Get-Content $cfErr -Raw -ErrorAction SilentlyContinue
-      $m2 = [regex]::Match($contentE, "https://[a-zA-Z0-9-]+\.trycloudflare\.com")
-      if ($m2.Success) { $tunnelUrl = $m2.Value }
+      if ($contentE) { $m2 = [regex]::Match($contentE, "https://[a-zA-Z0-9-]+\.trycloudflare\.com"); if ($m2.Success) { $tunnelUrl = $m2.Value } }
     }
   }
   if ($tunnelUrl) {
