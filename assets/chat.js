@@ -61,6 +61,7 @@
     var headers = Object.assign({}, opts.headers || {});
     if (state.password) headers["Authorization"] = authHeader();
     if (state.config.directory) headers["x-opencode-directory"] = state.config.directory;
+    if (opts.body) headers["Content-Type"] = "application/json";
     return fetch(url, {
       method: opts.method || "GET",
       headers: headers,
