@@ -6,6 +6,12 @@
   var USERNAME = "opencode";
   var POLL_MS = 1500;
   var DEFAULT_SERVER = "http://127.0.0.1:4500";
+  var PROCESS_GUIDE =
+    "[INSTRUCCION DE PROCESO: vela porque se cumpla siempre] Trabaja paso a paso y NARRA cada fase.\n" +
+    "1) Antes de cada fase escribe 1 linea corta de texto: \"Editando...\", \"Subiendo a GitHub...\", \"Build en curso...\", \"Verificando despliegue...\".\n" +
+    "2) Cuando despliegues, actualiza en index.html el marcador <!-- deploy:XXXX --> del <head> con el sha corto de tu commit.\n" +
+    "3) JAMAS digas \"Listo\", \"Hecho\" ni \"ya esta\" hasta comprobar que la URL publica https://desarrolladormadrid2.github.io/asistente-web-demo/ devuelve 200 Y contiene el marcador nuevo (usa Invoke-WebRequest; reintenta cada 10-15 s hasta 5 min).\n" +
+    "4) Verifica el contenido visible nuevo (titulo/seccion) en esa URL publica antes de confirmar nada.\n";
   var TOOL_LABELS = {
     read: "leyendo archivos",
     edit: "editando la web",
@@ -324,7 +330,7 @@
       .then(function () {
         return api("/session/" + encodeURIComponent(state.sessionID) + "/prompt_async", {
           method: "POST",
-          body: { parts: [{ type: "text", text: text }], agent: AGENT }
+          body: { parts: [{ type: "text", text: PROCESS_GUIDE + "\n\n" + text }], agent: AGENT }
         });
       })
       .then(function (r) {
