@@ -43,6 +43,7 @@
     password: "",
     sessionID: null,
     lastAssistId: null,
+    lastCompleteTs: 0,
     busy: false,
     timer: null,
     deployBase: null,
@@ -57,6 +58,7 @@
         server: state.serverUrl !== state.config.server ? state.serverUrl : "",
         password: state.password,
         sessionID: state.sessionID,
+        lastCompleteTs: state.lastCompleteTs || 0,
         messages: (state.msgs || []).slice(-200)
       }));
     } catch (e) {}
@@ -70,6 +72,7 @@
       if (s.server) state.serverUrl = s.server;
       if (s.password) state.password = s.password;
       if (s.sessionID) state.sessionID = s.sessionID;
+      if (typeof s.lastCompleteTs === "number") state.lastCompleteTs = s.lastCompleteTs;
       if (Array.isArray(s.messages)) state.msgs = s.messages;
     } catch (e) {}
   }
@@ -200,9 +203,12 @@
         var out = [];
         for (var i = 0; i < list.length; i++) {
           var item = list[i];
-          if (item.info && item.info.role === "assistant" && item.info.id !== state.lastAssistId) {
-            out.push(item);
+          if (!(item.info && item.info.role === "assistant")) continue;
+          var created = item.info.time && item.info.time.created;
+          if (state.lastCompleteTs && typeof created === "number" && created <= state.lastCompleteTs) {
+            continue;
           }
+          out.push(item);
         }
         out.sort(function (a, b) {
           var ta = a.info.time && a.info.time.created;
@@ -275,6 +281,8 @@
         if (best.complete) {
           els.streamingBubble.classList.remove("streaming");
           state.lastAssistId = best.item.info.id;
+          var t = best.item.info.time && (best.item.info.time.completed || best.item.info.time.created || 0);
+          if (t) state.lastCompleteTs = Math.max(state.lastCompleteTs || 0, t);
           state.msgs.push({ kind: "bot", text: best.text });
           saveStore();
           setBusy(false);
@@ -381,6 +389,7 @@
   function newConversation() {
     state.sessionID = null;
     state.lastAssistId = null;
+    state.lastCompleteTs = 0;
     saveStore();
     els.msgs.innerHTML = "";
     addMsg("sys", "Nueva conversación iniciada.");
@@ -392,6 +401,7 @@
     state.msgs = [];
     state.sessionID = null;
     state.lastAssistId = null;
+    state.lastCompleteTs = 0;
     if (els.streamingBubble) { els.streamingBubble.remove(); els.streamingBubble = null; }
     saveStore();
     els.msgs.innerHTML = "";
