@@ -26,7 +26,7 @@
 .cw-fab svg { width: 28px; height: 28px; }
 
 .cw-panel {
-  position: absolute; bottom: 74px; right: 0; width: 380px; max-width: calc(100vw - 40px);
+  position: absolute; bottom: 74px; right: 0; width: 475px; max-width: calc(100vw - 40px);
   height: min(600px, calc(100vh - 120px));
   background: var(--cw-bg); border: 1px solid var(--cw-line); border-radius: 18px;
   display: flex; flex-direction: column; overflow: hidden;
