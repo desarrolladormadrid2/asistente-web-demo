@@ -17,7 +17,8 @@
     sessionID: null,
     lastAssistId: null,
     busy: false,
-    timer: null
+    timer: null,
+    msgs: []
   };
 
   var els = {};
@@ -27,7 +28,8 @@
       localStorage.setItem(STORE_KEY, JSON.stringify({
         server: state.serverUrl !== state.config.server ? state.serverUrl : "",
         password: state.password,
-        sessionID: state.sessionID
+        sessionID: state.sessionID,
+        messages: (state.msgs || []).slice(-200)
       }));
     } catch (e) {}
   }
@@ -40,6 +42,7 @@
       if (s.server) state.serverUrl = s.server;
       if (s.password) state.password = s.password;
       if (s.sessionID) state.sessionID = s.sessionID;
+      if (Array.isArray(s.messages)) state.msgs = s.messages;
     } catch (e) {}
   }
 
@@ -84,6 +87,15 @@
     els.msgs.appendChild(d);
     scrollDown();
     return d;
+  }
+
+  function renderHistory() {
+    var hist = state.msgs || [];
+    els.msgs.innerHTML = "";
+    for (var i = 0; i < hist.length; i++) {
+      var kind = hist[i] && hist[i].kind === "user" ? "user" : "bot";
+      addMsg(kind, (hist[i] && hist[i].text) || "");
+    }
   }
 
   function scrollDown() {
@@ -190,29 +202,36 @@
 
   function pollOnce() {
     return lastAssistantMessages().then(function (list) {
-      for (var i = list.length - 1; i >= 0; i--) {
+      var best = null;
+      for (var i = 0; i < list.length; i++) {
         var item = list[i];
         var text = renderAssistant(item);
-        if (text || isComplete(item)) {
-          if (els.streamingBubble) {
-            els.streamingBubble.textContent = text || "…";
-            els.streamingBubble.classList.remove("streaming");
-            if (!isComplete(item)) els.streamingBubble.classList.add("streaming");
-          } else if (text) {
-            els.streamingBubble = addMsg("bot", text);
-            els.streamingBubble.classList.add("streaming");
-          }
-          if (isComplete(item)) {
-            state.lastAssistId = item.info.id;
-            saveStore();
-            setBusy(false);
-            if (els.streamingBubble) {
-              els.streamingBubble.classList.remove("streaming");
-              els.streamingBubble = null;
-            }
-            return true;
-          }
-          return false;
+        if (!text) continue;
+        var ts = (item.info && item.info.time) ? (item.info.time.completed || item.info.time.created || 0) : 0;
+        if (!best || ts > best.ts) {
+          best = {
+            item: item,
+            text: text,
+            ts: ts,
+            complete: !!(item.info && item.info.time && item.info.time.completed)
+          };
+        }
+      }
+      if (best) {
+        if (els.streamingBubble) {
+          els.streamingBubble.textContent = best.text;
+        } else {
+          els.streamingBubble = addMsg("bot", best.text);
+          els.streamingBubble.classList.add("streaming");
+        }
+        if (best.complete) {
+          els.streamingBubble.classList.remove("streaming");
+          state.lastAssistId = best.item.info.id;
+          state.msgs.push({ kind: "bot", text: best.text });
+          saveStore();
+          setBusy(false);
+          els.streamingBubble = null;
+          return true;
         }
       }
       return false;
@@ -244,6 +263,8 @@
     els.input.value = "";
     els.input.style.height = "auto";
     addMsg("user", text);
+    state.msgs.push({ kind: "user", text: text });
+    saveStore();
 
     setBusy(true);
     if (!state.password) {
@@ -317,6 +338,19 @@
     addMsg("sys", "Nueva conversación iniciada.");
   }
 
+  function clearChat() {
+    if (state.busy) return;
+    clearTimeout(state.timer);
+    state.msgs = [];
+    state.sessionID = null;
+    state.lastAssistId = null;
+    if (els.streamingBubble) { els.streamingBubble.remove(); els.streamingBubble = null; }
+    saveStore();
+    els.msgs.innerHTML = "";
+    els.input.value = "";
+    addMsg("sys", "Chat limpiado. Empieza de nuevo cuando quieras.");
+  }
+
   function buildDOM() {
     var fab = document.createElement("button");
     fab.className = "cw-fab";
@@ -329,6 +363,9 @@
       '<div class="cw-head">' +
         '<span class="cw-dot" id="cw-dot"></span>' +
         '<div class="cw-t">Asistente <span class="cw-sub" id="cw-substatus"></span></div>' +
+        '<button class="cw-gear" id="cw-clear" title="Limpiar chat">' +
+          '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 7h12l-.8 12.2A2 2 0 0 1 15.2 21H8.8a2 2 0 0 1-2-1.8L6 7zm3-4h6l1 2h4v2H4V5h4l1-2zM9 9h1.2l.5 9H9l-.5-9zm4.8 0H15l-.5 9h-1.7l.5-9z"/></svg>' +
+        '</button>' +
         '<button class="cw-gear" id="cw-gear" title="Ajustes">⚙</button>' +
       '</div>' +
       '<div class="cw-msgs" id="cw-msgs"></div>' +
@@ -365,6 +402,7 @@
     els.msgs = panel.querySelector("#cw-msgs");
     els.input = panel.querySelector("#cw-in");
     els.send = panel.querySelector("#cw-send");
+    els.clear = panel.querySelector("#cw-clear");
     els.srv = panel.querySelector("#cw-srv");
     els.pwd = panel.querySelector("#cw-pwd");
     els.transportStatus = panel.querySelector("#cw-tstatus");
@@ -380,6 +418,7 @@
     });
 
     els.send.addEventListener("click", send);
+    els.clear.addEventListener("click", clearChat);
     els.input.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
     });
@@ -419,6 +458,7 @@
   function init() {
     buildDOM();
     loadStore();
+    renderHistory();
     var cfgFile = root.getAttribute("data-config") || "chat-config.json";
     fetch(cfgFile, { cache: "no-store" })
       .then(function (r) { return r.status === 200 ? r.json() : {}; })
