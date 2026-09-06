@@ -40,8 +40,11 @@ try {
   exit 1
 }
 
-# 2) Contraseña del chat (no se guarda en disco)
+# 2) Contraseña del chat (nunca se guarda en disco ni en el repo)
 $webPass = $env:OPENCODE_WEB_PASSWORD
+if (-not $webPass) {
+  $webPass = [Environment]::GetEnvironmentVariable("OPENCODE_WEB_PASSWORD", "User")
+}
 if (-not $webPass) {
   $sec = Read-Host "Contrasena del chat (la que pone el usuario en Ajustes)" -AsSecureString
   $webPass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
