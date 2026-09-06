@@ -6,6 +6,27 @@
   var USERNAME = "opencode";
   var POLL_MS = 1500;
   var DEFAULT_SERVER = "http://127.0.0.1:4500";
+  var TOOL_LABELS = {
+    read: "leyendo archivos",
+    edit: "editando la web",
+    write: "editando la web",
+    bash: "ejecutando comandos",
+    task: "trabajando en tareas",
+    websearch: "buscando en internet",
+    webfetch: "leyendo páginas web",
+    github_create_or_update_file: "subiendo archivos a GitHub",
+    github_push_files: "publicando en GitHub",
+    github_get_file_contents: "consultando GitHub",
+    github_create_repository: "creando repositorio",
+    github_list_commits: "consultando git",
+    git: "subiendo a GitHub",
+    playwright_browser_navigate: "abriendo navegador"
+  };
+
+  function markerFrom(html) {
+    var m = /<!--\s*deploy:([a-zA-Z0-9]+)\s*-->/.exec(html || "");
+    return m ? m[1] : "";
+  }
 
   var root = document.getElementById("chat-widget");
   if (!root) return;
@@ -18,6 +39,7 @@
     lastAssistId: null,
     busy: false,
     timer: null,
+    deployBase: null,
     msgs: []
   };
 
@@ -200,6 +222,23 @@
     return !!(item.info && item.info.time && item.info.time.completed);
   }
 
+  function latestToolLabel(list) {
+    for (var i = list.length - 1; i >= 0; i--) {
+      var item = list[i];
+      var parts = item && item.parts;
+      if (!parts) continue;
+      for (var j = parts.length - 1; j >= 0; j--) {
+        var p = parts[j];
+        if (p && p.type === "tool" && p.tool) {
+          var lbl = TOOL_LABELS[p.tool];
+          if (lbl) return lbl;
+          return p.tool.replace(/_/g, " ");
+        }
+      }
+    }
+    return "resolviendo";
+  }
+
   function pollOnce() {
     return lastAssistantMessages().then(function (list) {
       var best = null;
@@ -216,6 +255,9 @@
             complete: !!(item.info && item.info.time && item.info.time.completed)
           };
         }
+      }
+      if (els.typing) {
+        els.typing.textContent = "El asistente está trabajando… (" + latestToolLabel(list) + ")";
       }
       if (best) {
         if (els.streamingBubble) {
@@ -455,10 +497,32 @@
     });
   }
 
+  function startReloadWatch() {
+    if (!/^https?:$/.test(location.protocol)) return;
+    state.deployBase = markerFrom(document.documentElement.outerHTML);
+    setInterval(function () {
+      fetch(location.pathname + "?mt=" + Date.now(), { cache: "no-store" })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+          var mk = markerFrom(txt);
+          if (!state.deployBase || !mk || mk === state.deployBase) return;
+          state.deployBase = mk;
+          toast("Cambios publicados. Recargando la página…");
+          var t = function () {
+            if (state.busy) { setTimeout(t, 2000); return; }
+            location.reload();
+          };
+          setTimeout(t, 600);
+        })
+        .catch(function () {});
+    }, 8000);
+  }
+
   function init() {
     buildDOM();
     loadStore();
     renderHistory();
+    startReloadWatch();
     var cfgFile = root.getAttribute("data-config") || "chat-config.json";
     fetch(cfgFile, { cache: "no-store" })
       .then(function (r) { return r.status === 200 ? r.json() : {}; })
