@@ -124,7 +124,8 @@
     var hist = state.msgs || [];
     els.msgs.innerHTML = "";
     for (var i = 0; i < hist.length; i++) {
-      var kind = hist[i] && hist[i].kind === "user" ? "user" : "bot";
+      var kind = hist[i] && hist[i].kind;
+      if (kind !== "user" && kind !== "sys") kind = "bot";
       addMsg(kind, (hist[i] && hist[i].text) || "");
     }
   }
@@ -523,6 +524,9 @@
           var mk = markerFrom(txt);
           if (!state.deployBase || !mk || mk === state.deployBase) return;
           state.deployBase = mk;
+          state.msgs.push({ kind: "sys", text: "Tarea completada. Cambios publicados y verificados. Recargando la página…" });
+          saveStore();
+          addMsg("sys", "Tarea completada. Cambios publicados y verificados. Recargando la página…");
           toast("Cambios publicados. Recargando la página…");
           var t = function () {
             if (state.busy) { setTimeout(t, 2000); return; }
@@ -532,6 +536,37 @@
         })
         .catch(function () {});
     }, 8000);
+  }
+
+  function syncHistory() {
+    if (!state.sessionID) return Promise.resolve();
+    return api("/session/" + encodeURIComponent(state.sessionID) + "/message?limit=50")
+      .then(function (r) { if (r.status !== 200) throw new Error("sync " + r.status); return r.json(); })
+      .then(function (list) {
+        var changed = false;
+        (list || []).sort(function (a, b) {
+          var ta = a.info && a.info.time ? (a.info.time.created || 0) : 0;
+          var tb = b.info && b.info.time ? (b.info.time.created || 0) : 0;
+          return ta - tb;
+        });
+        for (var i = 0; i < list.length; i++) {
+          var item = list[i];
+          if (!(item.info && item.info.role === "assistant")) continue;
+          var created = item.info.time && item.info.time.created;
+          var completed = item.info.time && item.info.time.completed;
+          if (!created || !completed) continue;
+          if (state.lastCompleteTs && created <= state.lastCompleteTs) continue;
+          var text = renderAssistant(item);
+          if (!text) continue;
+          addMsg("bot", text);
+          state.msgs.push({ kind: "bot", text: text });
+          state.lastAssistId = item.info.id;
+          state.lastCompleteTs = Math.max(state.lastCompleteTs || 0, completed || created);
+          changed = true;
+        }
+        if (changed) { saveStore(); scrollDown(); }
+      })
+      .catch(function () {});
   }
 
   function init() {
@@ -548,6 +583,7 @@
         if (state.config.server && !state.serverUrl) state.serverUrl = state.config.server;
         addMsg("sys", "Asistente listo. Escribe cualquier petición y le paso la orden al agente.");
         setStatus(state.config.server && !state.password ? "Configura la contraseña en Ajustes" : "Asistente…");
+        setTimeout(function () { syncHistory(); }, 400);
         setTimeout(checkHealth, 600);
       });
   }
